@@ -1,74 +1,49 @@
-# Aviewer {VERSION}
+<div align=center>
 
-多平台 MissAV 浏览/播放客户端。
+[![Release Downloads](https://img.shields.io/github/downloads/haorengg12/Aviewer/v{VERSION}/total?style=flat-square&logo=github)](https://github.com/haorengg12/Aviewer/releases/tag/v{VERSION})
 
-本版本通过 GitHub Actions 自动构建，提供 Android、iOS 和 Windows 平台的安装包或可执行文件。
+</div>
 
----
+**Download based on your OS:**
 
-## 下载
+<div align=left>
+<table>
+    <thead align=left>
+        <tr>
+            <th>OS</th>
+            <th>Download</th>
+        </tr>
+    </thead>
+    <tbody align=left>
+        <tr>
+        <td>Android</td>
+            <td>
+                <a href="https://github.com/haorengg12/Aviewer/releases/download/v{VERSION}/Aviewer-{VERSION}-android-arm64-v8a.apk"><img src="https://img.shields.io/badge/APK-ARMv8-168039.svg?logo=android"></a><br>
+                <a href="https://github.com/haorengg12/Aviewer/releases/download/v{VERSION}/Aviewer-{VERSION}-android-armeabi-v7a.apk"><img src="https://img.shields.io/badge/APK-ARMv7-45bf55.svg?logo=android"></a><br>
+                <a href="https://github.com/haorengg12/Aviewer/releases/download/v{VERSION}/Aviewer-{VERSION}-android-x86_64.apk"><img src="https://img.shields.io/badge/APK-x64-96ed89.svg?logo=android"></a><br>
+                <a href="https://github.com/haorengg12/Aviewer/releases/download/v{VERSION}/Aviewer-{VERSION}-android-universal.aab"><img src="https://img.shields.io/badge/AAB-Universal-3f51b5.svg?logo=android"></a>
+            </td>
+        </tr>
+        <tr>
+            <td>iOS</td>
+            <td>
+                <a href="https://github.com/haorengg12/Aviewer/releases/download/v{VERSION}/Aviewer-{VERSION}-ios.ipa"><img src="https://img.shields.io/badge/IPA-unsigned-000000.svg?logo=apple"></a>
+            </td>
+        </tr>
+        <tr>
+            <td>Windows</td>
+            <td>
+                <a href="https://github.com/haorengg12/Aviewer/releases/download/v{VERSION}/Aviewer-windows-v{VERSION}.zip"><img src="https://img.shields.io/badge/Portable-ZIP-67b7d1.svg?logo=windows"></a>
+            </td>
+        </tr>
+    </tbody>
+</table>
 
-请在当前 Release 页面右侧的「Assets」列表中，根据你的设备平台下载对应文件：
 
-### Android
+</div>
 
-- Android APK 安装包：`*.apk`
-- Android App Bundle：`*.aab`（例如用于商店上传）
+<div dir="ltr">
 
-> 适用于 Android 5.0 及以上系统。
+**List of all changes:** See repository changelog or commit history.
 
-### iOS
-
-- iOS IPA 安装包：`*.ipa`
-
-> 该 IPA 为未签名包，需要通过 Xcode、AltStore、Sideloadly 等方式安装到真机或模拟器中。
-
-### Windows
-
-- Windows 压缩包：`Aviewer-windows-{TAG}.zip`
-
-> 解压后，进入解压目录，双击运行 `app.exe` 即可启动应用。
-
----
-
-## 安装说明
-
-### Android 安装
-
-1. 在「Assets」中下载适合的 APK 文件到手机。
-2. 在系统设置中开启「安装未知来源应用」权限（不同品牌路径略有差异）。
-3. 点击 APK 文件，按照系统提示完成安装。
-4. 首次启动时，根据提示授予网络访问等权限。
-
-### iOS 安装
-
-1. 在电脑上下载 `*.ipa` 文件。
-2. 使用以下任一方式安装到设备：
-   - Xcode：将项目添加到设备并部署 IPA；
-   - AltStore / Sideloadly 等第三方工具：导入 IPA 并按工具提示安装；
-3. 如出现「未受信任开发者」提示，在 iOS 设置中信任对应开发者后重新打开应用。
-
-> 由于未集成自动签名，本项目提供的 IPA 主要用于测试与自签名安装。
-
-### Windows 安装
-
-1. 在「Assets」中下载 `Aviewer-windows-{TAG}.zip`。
-2. 解压到任意目录（例如 `C:\Apps\Aviewer\`）。
-3. 双击运行解压目录下的 `app.exe` 启动应用。
-4. 如出现 SmartScreen 提示，可选择「更多信息」→「仍要运行」。
-
----
-
-## 版本信息
-
-- 版本号：`{VERSION}`
-- 标签：`{TAG}`（对应本次 Release 的 Git 标签）
-- 构建方式：GitHub Actions 自动构建（Android APK / AAB、iOS IPA、Windows ZIP）
-
-如在安装或使用过程中遇到问题，欢迎在 Issues 中反馈，并附上：
-
-- 使用的平台与架构（Android/iOS/Windows）
-- 系统版本
-- 使用的安装包文件名
-- 复现问题的步骤说明
-
+</div>
