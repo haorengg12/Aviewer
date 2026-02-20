@@ -84,6 +84,11 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Build iOS app (fallback)
+        run: |
+          # Try building the app bundle to ensure Runner.app exists even if IPA export fails
+          flutter build ios --release || true
+
       - name: Build iOS IPA
         run: flutter build ipa --release --no-codesign
 
@@ -95,13 +100,35 @@ jobs:
             FIRST_IPA="$(ls "$IPA_DIR"/*.ipa | head -n 1)"
             mv "$FIRST_IPA" "$IPA_DIR/Aviewer-${TAG_NAME}-ios.ipa"
           fi
-          # Fallback: if IPA not found, package .app as zip
+          # Fallback: if IPA not found, package Runner.app as zip from common locations
           if ! compgen -G "$IPA_DIR/*.ipa" > /dev/null; then
-            APP_DIR="build/ios/iphoneos/Runner.app"
-            if [ -d "$APP_DIR" ]; then
-              (cd "$(dirname "$APP_DIR")" && zip -r "../../Aviewer-${TAG_NAME}-ios.app.zip" "$(basename "$APP_DIR")")
+            APP_DIR=""
+            for CANDIDATE in \
+              "build/ios/iphoneos/Runner.app" \
+              "build/ios/Release-iphoneos/Runner.app" \
+              "build/ios/Debug-iphoneos/Runner.app"
+            do
+              if [ -d "$CANDIDATE" ]; then
+                APP_DIR="$CANDIDATE"
+                break
+              fi
+            done
+            # As a last resort, search for Runner.app anywhere under build/ios
+            if [ -z "$APP_DIR" ]; then
+              APP_DIR="$(find build/ios -type d -name 'Runner.app' | head -n 1 || true)"
+            fi
+            if [ -n "$APP_DIR" ] && [ -d "$APP_DIR" ]; then
+              APP_PARENT="$(dirname "$APP_DIR")"
+              (cd "$APP_PARENT" && zip -r "../Aviewer-${TAG_NAME}-ios.app.zip" "$(basename "$APP_DIR")")
             fi
           fi
+
+      - name: Debug iOS outputs
+        run: |
+          echo "Listing build/ios directory:"
+          ls -la build/ios || true
+          echo "Listing build/ios/ipa directory:"
+          ls -la build/ios/ipa || true
 
       - name: Upload iOS artifacts
         uses: actions/upload-artifact@v4
