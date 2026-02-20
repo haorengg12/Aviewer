@@ -21,7 +21,10 @@ class _MissAVPageState extends State<MissAVPage> {
   int? _hoverIndexSection;
   int? _hoverIndexItem;
   HeadlessInAppWebView? _headlessWebView;
-  bool _hasParsed = false;
+    int _refreshAttempts = 0;
+    bool _incrementalActive = false;
+    int _idleRounds = 0;
+    final Set<String> _parsedSectionTitles = {};
 
   @override
   void initState() {
@@ -60,7 +63,10 @@ class _MissAVPageState extends State<MissAVPage> {
       _sections = [];
       _hoverIndexSection = null;
       _hoverIndexItem = null;
-      _hasParsed = false;
+      _refreshAttempts = 0;
+      _incrementalActive = false;
+      _idleRounds = 0;
+      _parsedSectionTitles.clear();
     });
 
     try {
@@ -78,7 +84,15 @@ class _MissAVPageState extends State<MissAVPage> {
         onLoadStop: (controller, url) async {
           // WebView 报告“某个地址加载结束”时，并不一定所有异步内容都完成，
           // 这里再额外等待页面 readyState 完成后再抓取 HTML
-          await _waitForFullLoadAndParse(controller);
+          // Cloudflare 检测与最多两次刷新
+          if (await _isCloudflareChallenge(controller)) {
+            if (_refreshAttempts < 2) {
+              _refreshAttempts++;
+              await controller.reload();
+              return;
+            }
+          }
+          await _startIncrementalParse(controller);
         },
         onReceivedHttpError: (controller, request, errorResponse) {
           // Cloudflare 校验阶段会有 403，这里不立即报错，等待最终页面
@@ -96,99 +110,112 @@ class _MissAVPageState extends State<MissAVPage> {
     }
   }
 
-  Future<void> _waitForFullLoadAndParse(
+ 
+
+  Future<void> _startIncrementalParse(
       InAppWebViewController controller) async {
-    if (_hasParsed || !mounted) {
-      return;
-    }
-    try {
-      // 轮询 document.readyState，直到变为 complete 或超时
-      for (var i = 0; i < 10; i++) {
-        final state = await controller.evaluateJavascript(
-          source: 'document.readyState',
+    if (!mounted) return;
+    _incrementalActive = true;
+    _idleRounds = 0;
+    while (mounted && _incrementalActive) {
+      try {
+        final html = await controller.evaluateJavascript(
+          source: 'document.documentElement.outerHTML',
         );
-        if (state == 'complete') {
+        var added = 0;
+        if (html is String && html.isNotEmpty) {
+          final document = parser.parse(html);
+          final allDivs = document.querySelectorAll('div');
+          final containers = <dom.Element>[];
+          for (final container in allDivs) {
+            final className = container.className;
+            final isSectionContainer =
+                    className.contains('sm:container') &&
+                    className.contains('mx-auto') &&
+                    className.contains('mb-5') &&
+                    className.contains('px-4');
+            if (!isSectionContainer) continue;
+            containers.add(container);
+          }
+          final firstCount = containers.length >= 4 ? 4 : containers.length;
+          final firstPart = containers.take(firstCount);
+          final secondPart = containers.skip(firstCount);
+
+          // 先处理第一部分
+          for (final container in firstPart) {
+            dom.Element? titleElement;
+            for (final child in container.children) {
+              final c = child.className;
+              if (c.contains('flex') &&
+                  c.contains('items-center') &&
+                  c.contains('justify-between') &&
+                  c.contains('pt-10') &&
+                  c.contains('pb-6')) {
+                titleElement = child;
+                break;
+              }
+            }
+            if (titleElement == null) continue;
+            final title = titleElement.children.first.text.trim();
+            if (_parsedSectionTitles.contains(title)) continue;
+            final tmp = <MissAVSection>[];
+            // FIXME： 未加载成功时tmp 为空
+            _parseFirstPartSection(container, tmp);
+            if (tmp.isNotEmpty) {
+              _parsedSectionTitles.add(tmp.first.title);
+              _sections.addAll(tmp);
+              added += tmp.length;
+            }
+          }
+
+          // 再处理第二、三部分
+          for (final container in secondPart) {
+            dom.Element? titleElement;
+            for (final child in container.children) {
+              final c = child.className;
+              if (c.contains('flex') &&
+                  c.contains('items-center') &&
+                  c.contains('justify-between') &&
+                  c.contains('pt-10') &&
+                  c.contains('pb-6')) {
+                titleElement = child;
+                break;
+              }
+            }
+            if (titleElement == null) continue;
+            final title = titleElement.children.first.text.trim();
+            if (_parsedSectionTitles.contains(title)) continue;
+            final tmp = <MissAVSection>[];
+            _parseCommonSection(container, tmp);
+            if (tmp.isNotEmpty) {
+              _parsedSectionTitles.add(tmp.first.title);
+              _sections.addAll(tmp);
+              added += tmp.length;
+            }
+          }
+        }
+        if (added > 0) {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+          }
+          _idleRounds = 0;
+        } else {
+          _idleRounds++;
+        }
+        if (_idleRounds >= 6) {
+          _incrementalActive = false;
           break;
         }
-        await Future.delayed(const Duration(milliseconds: 500));
+      } catch (_) {
+        _idleRounds++;
       }
-      // 再额外等待一小段时间，给异步渲染/广告位预留缓冲
-      await Future.delayed(const Duration(seconds: 1));
-      if (_hasParsed || !mounted) {
-        return;
-      }
-      final html = await controller.evaluateJavascript(
-        source: 'document.documentElement.outerHTML',
-      );
-      if (html != null) {
-        _hasParsed = true;
-        // 将完整的 MissAV 首页 HTML 交给解析函数，转换为 Section + Item 数据
-        _parseHtml(html.toString());
-      } else {
-        if (mounted) {
-          setState(() {
-            _error = '无法获取页面 HTML';
-            _isLoading = false;
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = '解析页面失败: $e';
-          _isLoading = false;
-        });
-      }
+      await Future.delayed(const Duration(milliseconds: 500));
     }
   }
 
-  void _parseHtml(String htmlContent) {
-    try {
-      final document = parser.parse(htmlContent);
-
-      final allContainers = document.querySelectorAll('div');
-      final sections = <MissAVSection>[];
-      var sectionContainerIndex = 0;
-
-      for (final container in allContainers) {
-        final className = container.className;
-        // MissAV 首页各个主要内容区域的外层 container：
-        //  - 第一部分：「推薦給你」以及其后紧跟的几个推荐模块
-        //  - 第二部分：常规模块（之前规则就能匹配）
-        //  - 第三部分：class="sm:container mx-auto px-4" 的模块（有的没有 mb-5）
-        final isSectionContainer =
-            className.contains('sm:container') &&
-                className.contains('mx-auto') &&
-                className.contains('px-4');
-        if (!isSectionContainer) {
-          continue;
-        }
-
-        sectionContainerIndex++;
-
-        if (sectionContainerIndex <= 4) {
-          _parseFirstPartSection(container, sections);
-        } else {
-          _parseCommonSection(container, sections);
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          // 解析完成后，得到的 sections 即为首页上各个模块（顺序与网页接近）
-          _sections = sections;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _isLoading = false;
-        });
-      }
-    }
-  }
+ 
 
   void _parseFirstPartSection(
       dom.Element container, List<MissAVSection> sections) {
@@ -209,7 +236,7 @@ class _MissAVPageState extends State<MissAVPage> {
       return;
     }
 
-    final title = titleElement.text.trim();
+    final title = titleElement.children.first.text.trim();
 
     final List<MissAVItem> items = [];
 
@@ -223,38 +250,50 @@ class _MissAVPageState extends State<MissAVPage> {
 
     final gridChildren = grid.children.toList(growable: false);
 
-    for (var i = 0; i < gridChildren.length; i++) {
-      final card = gridChildren[i];
-      final itemClass = card.className;
-      if (!itemClass.contains('thumbnail') || !itemClass.contains('group')) {
+    for (var i = 2; i < gridChildren.length; i++) {
+      final wrapper = gridChildren[i];
+      if (wrapper.children.length < 2) {
         continue;
       }
+      // 列表第一个元素：缩略图容器（thumbnail group）
+      final thumb = wrapper.children[0];
+      // dom.Element? hero;
+      // for (final child in thumb.children) {
+        final hc = thumb.className;
+        if (!hc.contains('relative') ||
+            !hc.contains('aspect-w-16') ||
+            !hc.contains('aspect-h-9') ||
+            !hc.contains('rounded') ||
+            !hc.contains('overflow-hidden') ||
+            !hc.contains('shadow-lg')) {
+          // hero = child;
+          // break;
+          continue;
+        }
+      // }
+      // if (hero == null) {
+      //   continue;
+      // }
+      // 列表第二个元素：标题容器，取其中 <a> 的文本
+      final titleDiv = wrapper.children[1];
+      var titleText = '';
+      final titleAnchor = titleDiv.querySelector('a');
+      if (titleAnchor != null) {
+        titleText = titleAnchor.text.trim();
+      }
 
-      final firstLink = card.querySelector('a[href]');
+      final firstLink = thumb.querySelector('a[href]');
       if (firstLink == null) continue;
 
-      final img = card.querySelector('img');
+      final img = thumb.querySelector('img');
       if (img == null) continue;
-
-      var titleText = '';
-      // 第一部分标题：取当前卡片后面的第二个 div（紧跟的标题行）里的 <a> 文本
-      if (i + 1 < gridChildren.length) {
-        final titleDiv = gridChildren[i + 1];
-        if (titleDiv.className.contains('my-2') &&
-            titleDiv.className.contains('text-sm')) {
-          final titleAnchor = titleDiv.querySelector('a');
-          if (titleAnchor != null) {
-            titleText = titleAnchor.text.trim();
-          }
-        }
-      }
 
       if (titleText.isEmpty) {
         titleText =
             img.attributes['alt'] ?? firstLink.attributes['title'] ?? '';
       }
       if (titleText.isEmpty) {
-        titleText = card.text.trim();
+        titleText = wrapper.text.trim();
       }
 
       var imgUrl = img.attributes['data-src'] ?? img.attributes['src'];
@@ -262,7 +301,7 @@ class _MissAVPageState extends State<MissAVPage> {
       var previewUrl = img.attributes['data-preview'];
       var duration = '';
 
-      final durationSpans = card.querySelectorAll('span');
+      final durationSpans = thumb.querySelectorAll('span');
       for (final span in durationSpans) {
         final t = span.text.trim();
         if (t.contains(':')) {
@@ -324,7 +363,7 @@ class _MissAVPageState extends State<MissAVPage> {
       return;
     }
 
-    final title = titleElement.text.trim();
+    final title = titleElement.children.first.text.trim();
 
     final List<MissAVItem> items = [];
     // 模块内部所有可能包含缩略图的格子，通常是 grid 布局中的每个卡片
@@ -335,7 +374,7 @@ class _MissAVPageState extends State<MissAVPage> {
       if (!itemClass.contains('thumbnail') || !itemClass.contains('group')) {
         continue;
       }
-
+      // TODO: 应该同时获取元数据，比如番号等，用于数据库匹配
       final firstLink = div.querySelector('a');
       if (firstLink == null) continue;
 
@@ -343,9 +382,17 @@ class _MissAVPageState extends State<MissAVPage> {
       final img = firstLink.querySelector('img') ?? div.querySelector('img');
       if (img == null) continue;
 
-      // 视频标题：优先使用封面上的 alt，其次使用 a 标签 title，最后回退到文本
-      var titleText =
-          img.attributes['alt'] ?? firstLink.attributes['title'] ?? '';
+      var titleText = '';
+      if (div.children.length >= 2) {
+        final titleDiv = div.children[1];
+        final titleAnchor = titleDiv.querySelector('a');
+        if (titleAnchor != null) {
+          titleText = titleAnchor.text.trim();
+        }
+      }
+      if (titleText.isEmpty) {
+        titleText = img.attributes['alt'] ?? firstLink.attributes['title'] ?? '';
+      }
       if (titleText.isEmpty) {
         titleText = div.text.trim();
       }
@@ -404,7 +451,7 @@ class _MissAVPageState extends State<MissAVPage> {
     return Scaffold(
       appBar: AppBar(
         // 顶部应用栏：不是 MissAV 原站的一部分，仅用于本 App 的标题与刷新按钮
-        title: const Text('MissAV Discovery'),
+        title: const Text('Aviewer'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -532,11 +579,7 @@ class _MissAVPageState extends State<MissAVPage> {
                   // 静态封面：列表页中看到的主缩略图
                   CachedNetworkImage(
                     imageUrl: item.imageUrl,
-                    httpHeaders: const {
-                      'Referer': 'https://missav.ai/',
-                      'User-Agent':
-                          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    },
+                    httpHeaders: _headersForUrl(item.imageUrl),
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Container(
                       color: Colors.grey[200],
@@ -552,11 +595,7 @@ class _MissAVPageState extends State<MissAVPage> {
                     Positioned.fill(
                       child: CachedNetworkImage(
                         imageUrl: item.previewUrl!,
-                        httpHeaders: const {
-                          'Referer': 'https://missav.ai/',
-                          'User-Agent':
-                              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        },
+                        httpHeaders: _headersForUrl(item.previewUrl!),
                         fit: BoxFit.cover,
                         placeholder: (context, url) => Container(
                           color: Colors.black12,
@@ -622,6 +661,42 @@ class _MissAVPageState extends State<MissAVPage> {
       ),
     );
   }
+  Map<String, String> _headersForUrl(String url) {
+    return {
+      'Referer': 'https://missav.ai/',
+      'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    };
+  }
+
+  Future<bool> _isCloudflareChallenge(
+      InAppWebViewController controller) async {
+    try {
+      final title =
+          await controller.evaluateJavascript(source: 'document.title') as String?;
+      final bodyText = await controller
+          .evaluateJavascript(source: 'document.body.innerText') as String?;
+      final hasChallengeElement = await controller.evaluateJavascript(
+        source:
+            'document.querySelector("[id*=cf-challenge], [class*=cf-challenge]") != null',
+      );
+      final markers = [
+        'Just a moment',
+        'Checking your browser',
+        'Cloudflare',
+        'Verify you are human',
+      ];
+      final t = title?.toLowerCase() ?? '';
+      final b = bodyText?.toLowerCase() ?? '';
+      final textHit =
+          markers.any((m) => t.contains(m.toLowerCase()) || b.contains(m.toLowerCase()));
+      final elemHit = hasChallengeElement == true;
+      return textHit || elemHit;
+    } catch (_) {
+      return false;
+    }
+  }
+
 }
 
 class MissAVSection {
