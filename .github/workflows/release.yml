@@ -139,7 +139,21 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $archivePath = "build/windows/runner/Release"
+          $archivePath = $null
+          $candidates = @(
+            "build/windows/runner/Release",
+            "build/windows/x64/runner/Release",
+            "build/windows/runner",
+            "build/windows/x64/runner"
+          )
+          foreach ($p in $candidates) {
+            if (Test-Path $p) { $archivePath = $p; break }
+          }
+          if (-not $archivePath) {
+            $exe = Get-ChildItem -Path "build/windows" -Recurse -Filter "*.exe" | Select-Object -First 1
+            if ($exe) { $archivePath = $exe.DirectoryName }
+          }
+          if (-not $archivePath) { throw "Windows build output not found under build/windows" }
           $zipName = "Aviewer-windows-${{ github.ref_name }}.zip"
           Compress-Archive -Path "$archivePath/*" -DestinationPath $zipName
 
