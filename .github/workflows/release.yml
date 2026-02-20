@@ -1,0 +1,161 @@
+name: Build Releases
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Android APK
+        run: flutter build apk --release --split-per-abi
+
+      - name: Build Android AppBundle
+        run: flutter build appbundle --release
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ github.ref_name }}
+          path: |
+            build/app/outputs/flutter-apk/*.apk
+            build/app/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
+  ios:
+    runs-on: macos-latest
+    needs: android
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build iOS IPA
+        run: flutter build ipa --release --no-codesign
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-${{ github.ref_name }}
+          path: build/ios/ipa/*.ipa
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    needs: android
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v4
+        with:
+          flutter-version: stable
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Windows
+        run: flutter build windows --release
+
+      - name: Archive Windows build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archivePath = "build/windows/runner/Release"
+          $zipName = "Aviewer-windows-${{ github.ref_name }}.zip"
+          Compress-Archive -Path "$archivePath/*" -DestinationPath $zipName
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ github.ref_name }}
+          path: Aviewer-windows-*.zip
+          if-no-files-found: error
+
+  release:
+    runs-on: ubuntu-latest
+    needs:
+      - android
+      - ios
+      - windows
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Android artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-${{ github.ref_name }}
+          path: dist/android
+
+      - name: Download iOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-${{ github.ref_name }}
+          path: dist/ios
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-${{ github.ref_name }}
+          path: dist/windows
+
+      - name: Prepare release notes
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          sed -e "s/{TAG}/${TAG_NAME}/g" -e "s/{VERSION}/${TAG_NAME}/g" .github/release_template.md > RELEASE_BODY.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Aviewer ${{ github.ref_name }}
+          body_path: RELEASE_BODY.md
+          files: |
+            dist/android/*
+            dist/ios/*
+            dist/windows/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
