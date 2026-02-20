@@ -182,18 +182,21 @@ jobs:
         with:
           name: android-${{ github.ref_name }}
           path: dist/android
+        continue-on-error: true
 
       - name: Download iOS artifacts
         uses: actions/download-artifact@v4
         with:
           name: ios-${{ github.ref_name }}
           path: dist/ios
+        continue-on-error: true
 
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
           name: windows-${{ github.ref_name }}
           path: dist/windows
+        continue-on-error: true
 
       - name: Prepare release notes
         run: |
