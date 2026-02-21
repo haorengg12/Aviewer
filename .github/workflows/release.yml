@@ -26,7 +26,7 @@ jobs:
              [ -n "${ANDROID_KEY_ALIAS:-}" ] && \
              [ -n "${ANDROID_KEY_PASSWORD:-}" ]; then
             mkdir -p android/app
-            printf "%s" "$ANDROID_KEYSTORE_BASE64" | base64 --decode --ignore-garbage > android/app/release.keystore
+            printf "%s" "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
             printf "storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=release.keystore\n" \
               "$ANDROID_KEYSTORE_PASSWORD" "$ANDROID_KEY_PASSWORD" "$ANDROID_KEY_ALIAS" > android/key.properties
             chmod 600 android/app/release.keystore android/key.properties
@@ -52,6 +52,27 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+      
+      - name: Hotfix Android Gradle KTS imports (CI)
+        shell: bash
+        run: |
+          set -e
+          GRADLE_FILE="android/app/build.gradle.kts"
+          if [ -f "$GRADLE_FILE" ]; then
+            if ! grep -q "import java.util.Properties" "$GRADLE_FILE"; then
+              awk '{
+                print $0
+                if ($0 ~ /id\("dev.flutter.flutter-gradle-plugin"\)/) {
+                  print ""
+                  print "import java.util.Properties"
+                  print "import java.io.File"
+                  print "import java.io.InputStream"
+                }
+              }' "$GRADLE_FILE" > "$GRADLE_FILE.tmp" && mv "$GRADLE_FILE.tmp" "$GRADLE_FILE"
+            fi
+            sed -i 's/java.util.Properties()/Properties()/g' "$GRADLE_FILE"
+            sed -i 's/keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))/keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }/g' "$GRADLE_FILE"
+          fi
 
       - name: Build Android APK
         run: flutter build apk --release --split-per-abi
