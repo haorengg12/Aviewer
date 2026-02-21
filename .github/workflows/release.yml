@@ -135,8 +135,9 @@ jobs:
               APP_DIR="$(find build/ios -type d -name 'Runner.app' | head -n 1 || true)"
             fi
             if [ -n "$APP_DIR" ] && [ -d "$APP_DIR" ]; then
-              APP_PARENT="$(dirname "$APP_DIR")"
-              (cd "$APP_PARENT" && zip -r "../Aviewer-${TAG_NAME}-ios.app.zip" "$(basename "$APP_DIR")")
+              # Always emit zip to build/ios root so upload pattern build/ios/*.app.zip can find it
+              APP_REL="${APP_DIR#build/ios/}"
+              (cd build/ios && zip -r "Aviewer-${TAG_NAME}-ios.app.zip" "$APP_REL")
             fi
           fi
 

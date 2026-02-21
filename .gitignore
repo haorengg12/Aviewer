@@ -34,6 +34,7 @@ migrate_working_dir/
 /coverage/
 .act
 .tools
+.logs
 
 # Symbolication related
 app.*.symbols
