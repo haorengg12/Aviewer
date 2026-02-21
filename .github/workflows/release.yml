@@ -34,10 +34,10 @@ jobs:
             printf "%s" "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
             STORE_PATH="$(pwd)/android/app/release.keystore"
             printf "storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=release.keystore\n" \
-              "$ANDROID_KEYSTORE_PASSWORD" "$ANDROID_KEY_PASSWORD" "$ANDROID_KEY_ALIAS" > android/key.properties
+              "$ANDROID_KEYSTORE_PASSWORD" "$ANDROID_KEY_PASSWORD" "$ANDROID_KEY_ALIAS" > key.properties
             # 使用绝对路径更稳健（部分环境相对路径解析异常）
-            sed -i "s|storeFile=release.keystore|storeFile=${STORE_PATH}|" android/key.properties
-            chmod 600 android/app/release.keystore android/key.properties
+            sed -i "s|storeFile=release.keystore|storeFile=${STORE_PATH}|" key.properties
+            chmod 600 android/app/release.keystore key.properties
           else
             echo "Android signing secrets not fully provided; falling back to debug keystore for release signing."
             DEBUG_KS="$HOME/.android/debug.keystore"
@@ -54,8 +54,8 @@ jobs:
                 -dname "CN=Android Debug,O=Android,C=US"
             fi
             printf "storePassword=android\nkeyPassword=android\nkeyAlias=androiddebugkey\nstoreFile=%s\n" \
-              "$DEBUG_KS" > android/key.properties
-            chmod 600 "$DEBUG_KS" android/key.properties
+              "$DEBUG_KS" > key.properties
+            chmod 600 "$DEBUG_KS" key.properties
           fi
 
       - name: Set up Java
@@ -74,7 +74,12 @@ jobs:
       
 
       - name: Build Android APK
-        run: flutter build apk --release --split-per-abi
+        run: |
+          set -e
+          TAG_NAME="${GITHUB_REF_NAME}"
+          VERSION_NAME="${TAG_NAME#v}"
+          export VERSION_NAME
+          flutter build apk --release --split-per-abi
         env:
           GRADLE_OPTS: -Dorg.gradle.vfs.watch=false -Dorg.gradle.daemon=false
 
