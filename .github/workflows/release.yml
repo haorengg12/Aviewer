@@ -5,6 +5,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -252,6 +255,7 @@ jobs:
         if: ${{ env.ACT != 'true' }}
         uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.ref_name }}
           name: Aviewer ${{ github.ref_name }}
           body_path: RELEASE_BODY.md
