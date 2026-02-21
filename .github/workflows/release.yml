@@ -26,7 +26,7 @@ jobs:
              [ -n "${ANDROID_KEY_ALIAS:-}" ] && \
              [ -n "${ANDROID_KEY_PASSWORD:-}" ]; then
             mkdir -p android/app
-            base64 -d <<<"$ANDROID_KEYSTORE_BASE64" > android/app/release.keystore
+            printf "%s" "$ANDROID_KEYSTORE_BASE64" | base64 --decode --ignore-garbage > android/app/release.keystore
             printf "storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=release.keystore\n" \
               "$ANDROID_KEYSTORE_PASSWORD" "$ANDROID_KEY_PASSWORD" "$ANDROID_KEY_ALIAS" > android/key.properties
             chmod 600 android/app/release.keystore android/key.properties
