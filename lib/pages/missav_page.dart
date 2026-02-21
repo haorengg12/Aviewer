@@ -159,7 +159,7 @@ class _MissAVPageState extends State<MissAVPage> {
             final title = titleElement.children.first.text.trim();
             if (_parsedSectionTitles.contains(title)) continue;
             final tmp = <MissAVSection>[];
-            // FIXME： 未加载成功时tmp 为空
+            // FIXME: 未加载成功时tmp 为空
             _parseFirstPartSection(container, tmp);
             if (tmp.isNotEmpty) {
               _parsedSectionTitles.add(tmp.first.title);
