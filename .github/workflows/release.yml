@@ -251,26 +251,26 @@ jobs:
           $exeFile = Get-ChildItem -Path $archivePath -Filter "*.exe" | Select-Object -First 1
           if (-not $exeFile) { throw "No .exe found under $archivePath" }
           $exeName = $exeFile.Name
-          $iss = @"
-[Setup]
-AppName=Aviewer
-AppVersion=$version
-DefaultDirName={pf}\Aviewer
-DefaultGroupName=Aviewer
-OutputDir=.
-OutputBaseFilename=Aviewer-$version-windows-amd64-setup
-Compression=lzma2
-SolidCompression=yes
-ArchitecturesInstallIn64BitMode=x64
-
-[Files]
-Source: "$archivePath\*"; DestDir: "{app}"; Flags: recursesubdirs
-
-[Icons]
-Name: "{group}\Aviewer"; Filename: "{app}\$exeName"
-Name: "{group}\Uninstall Aviewer"; Filename: "{uninstallexe}"
-"@
-          Set-Content -Path installer.iss -Value $iss -Encoding ASCII
+          $lines = @(
+            '[Setup]',
+            'AppName=Aviewer',
+            "AppVersion=$version",
+            'DefaultDirName={pf}\Aviewer',
+            'DefaultGroupName=Aviewer',
+            'OutputDir=.',
+            "OutputBaseFilename=Aviewer-$version-windows-amd64-setup",
+            'Compression=lzma2',
+            'SolidCompression=yes',
+            'ArchitecturesInstallIn64BitMode=x64',
+            '',
+            '[Files]',
+            ("Source: `"$archivePath\*`"; DestDir: `"{app}`"; Flags: recursesubdirs"),
+            '',
+            '[Icons]',
+            ("Name: `"{group}\Aviewer`"; Filename: `"{app}\$exeName`""),
+            ("Name: `"{group}\Uninstall Aviewer`"; Filename: `"{uninstallexe}`"")
+          )
+          $lines | Set-Content -Path installer.iss -Encoding ASCII
           if (Get-Command iscc -ErrorAction SilentlyContinue) {
             iscc installer.iss
           } else {
