@@ -17,6 +17,43 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate Android signing secrets
+        shell: bash
+        run: |
+          set -e
+          # 检查必需的 secrets 是否存在（不打印值）
+          for var in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!var:-}" ]; then
+              echo "Missing required secret: $var"
+              exit 1
+            fi
+          done
+          # 校验 Base64 可正确解码为有效 keystore 文件
+          TMP_JKS="$(mktemp)"
+          if ! printf "%s" "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$TMP_JKS"; then
+            echo "Failed to decode ANDROID_KEYSTORE_BASE64"
+            rm -f "$TMP_JKS"
+            exit 1
+          fi
+          # 使用密码验证 keystore 可被读取；不输出敏感信息
+          if ! keytool -list -keystore "$TMP_JKS" -storepass "$ANDROID_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            echo "Keystore validation failed: invalid password or file format"
+            rm -f "$TMP_JKS"
+            exit 1
+          fi
+          # 校验 alias 存在（不回显内容）
+          if ! keytool -list -v -keystore "$TMP_JKS" -storepass "$ANDROID_KEYSTORE_PASSWORD" 2>/dev/null | grep -q "Alias name: $ANDROID_KEY_ALIAS"; then
+            echo "Keystore validation failed: alias not found"
+            rm -f "$TMP_JKS"
+            exit 1
+          fi
+          rm -f "$TMP_JKS"
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
       - name: Prepare Android signing (optional via secrets)
         shell: bash
         run: |
