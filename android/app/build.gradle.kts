@@ -43,23 +43,21 @@ android {
 
     signingConfigs {
         create("release") {
-            if (keystoreProperties["storeFile"] != null) {
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String?
-                keyAlias = keystoreProperties["keyAlias"] as String?
-                keyPassword = keystoreProperties["keyPassword"] as String?
+            val storePath = keystoreProperties.getProperty("storeFile")
+            if (!storePath.isNullOrBlank()) {
+                storeFile = file(storePath)
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
             }
         }
     }
 
     buildTypes {
         release {
-            // Use release signing config (falls back to debug if keystore not provided)
-            signingConfig = try {
-                signingConfigs.getByName("release")
-            } catch (e: Exception) {
-                signingConfigs.getByName("debug")
-            }
+            val rel = signingConfigs.getByName("release")
+            val dbg = signingConfigs.getByName("debug")
+            signingConfig = if (rel.storeFile != null) rel else dbg
             // Optional: enable code shrinking to harden release build
             // isMinifyEnabled = true
             // isShrinkResources = true
