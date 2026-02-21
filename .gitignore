@@ -48,3 +48,6 @@ app.*.map.json
 /android/app/release
 docs/Untitled-2.txt
 android/key.txt
+android/key.properties
+android/app/release.keystore
+android/my-release-key.jks
