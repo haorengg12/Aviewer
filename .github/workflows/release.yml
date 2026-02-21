@@ -35,30 +35,23 @@ jobs:
       - name: Build Android APK
         run: flutter build apk --release --split-per-abi
 
-      - name: Build Android AppBundle
-        run: flutter build appbundle --release
-
       - name: Rename Android artifacts
         run: |
           TAG_NAME="${GITHUB_REF_NAME}"
+          VERSION="${TAG_NAME#v}"
 
           APK_DIR="build/app/outputs/flutter-apk"
-          BUNDLE_DIR="build/app/outputs/bundle/release"
 
           if [ -f "$APK_DIR/app-arm64-v8a-release.apk" ]; then
-            mv "$APK_DIR/app-arm64-v8a-release.apk" "$APK_DIR/Aviewer-${TAG_NAME}-android-arm64-v8a.apk"
+            mv "$APK_DIR/app-arm64-v8a-release.apk" "$APK_DIR/Aviewer-${VERSION}-android-arm64-v8a.apk"
           fi
 
           if [ -f "$APK_DIR/app-armeabi-v7a-release.apk" ]; then
-            mv "$APK_DIR/app-armeabi-v7a-release.apk" "$APK_DIR/Aviewer-${TAG_NAME}-android-armeabi-v7a.apk"
+            mv "$APK_DIR/app-armeabi-v7a-release.apk" "$APK_DIR/Aviewer-${VERSION}-android-armeabi-v7a.apk"
           fi
 
           if [ -f "$APK_DIR/app-x86_64-release.apk" ]; then
-            mv "$APK_DIR/app-x86_64-release.apk" "$APK_DIR/Aviewer-${TAG_NAME}-android-x86_64.apk"
-          fi
-
-          if [ -f "$BUNDLE_DIR/app-release.aab" ]; then
-            mv "$BUNDLE_DIR/app-release.aab" "$BUNDLE_DIR/Aviewer-${TAG_NAME}-android-universal.aab"
+            mv "$APK_DIR/app-x86_64-release.apk" "$APK_DIR/Aviewer-${VERSION}-android-x86_64.apk"
           fi
 
       - name: Upload Android artifacts
@@ -67,7 +60,6 @@ jobs:
           name: android-${{ github.ref_name }}
           path: |
             build/app/outputs/flutter-apk/*.apk
-            build/app/outputs/bundle/release/*.aab
           if-no-files-found: error
 
   ios:
@@ -114,10 +106,11 @@ jobs:
       - name: Rename iOS artifacts
         run: |
           TAG_NAME="${GITHUB_REF_NAME}"
+          VERSION="${TAG_NAME#v}"
           IPA_DIR="build/ios/ipa"
           if compgen -G "$IPA_DIR/*.ipa" > /dev/null; then
             FIRST_IPA="$(ls "$IPA_DIR"/*.ipa | head -n 1)"
-            mv "$FIRST_IPA" "$IPA_DIR/Aviewer-${TAG_NAME}-ios.ipa"
+            mv "$FIRST_IPA" "$IPA_DIR/Aviewer-${VERSION}-ios.ipa"
           fi
           # Fallback: if IPA not found, package Runner.app as zip from common locations
           if ! compgen -G "$IPA_DIR/*.ipa" > /dev/null; then
@@ -140,7 +133,7 @@ jobs:
             if [ -n "$APP_DIR" ] && [ -d "$APP_DIR" ]; then
               # Always emit zip to build/ios root so upload pattern build/ios/*.app.zip can find it
               APP_REL="${APP_DIR#build/ios/}"
-              (cd build/ios && zip -r "Aviewer-${TAG_NAME}-ios.app.zip" "$APP_REL")
+              (cd build/ios && zip -r "Aviewer-${VERSION}-ios.app.zip" "$APP_REL")
             fi
           fi
 
@@ -187,6 +180,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart("v")
           $archivePath = $null
           $candidates = @(
             "build/windows/runner/Release",
@@ -202,14 +197,22 @@ jobs:
             if ($exe) { $archivePath = $exe.DirectoryName }
           }
           if (-not $archivePath) { throw "Windows build output not found under build/windows" }
-          $zipName = "Aviewer-windows-${{ github.ref_name }}.zip"
+          $zipName = "Aviewer-$version-windows-amd64.zip"
           Compress-Archive -Path "$archivePath/*" -DestinationPath $zipName
+          $exeFile = Get-ChildItem -Path $archivePath -Filter "*.exe" | Select-Object -First 1
+          if ($exeFile) {
+            Copy-Item -Path $exeFile.FullName -Destination ("Aviewer-{0}-windows-amd64-setup.exe" -f $version)
+          } else {
+            Write-Warning "No .exe found under $archivePath to copy as setup exe"
+          }
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-${{ github.ref_name }}
-          path: Aviewer-windows-*.zip
+          path: |
+            Aviewer-*-windows-amd64.zip
+            Aviewer-*-windows-amd64-setup.exe
           if-no-files-found: error
 
   release:
@@ -249,7 +252,8 @@ jobs:
       - name: Prepare release notes
         run: |
           TAG_NAME="${GITHUB_REF_NAME}"
-          sed -e "s|{TAG}|${TAG_NAME}|g" -e "s|{VERSION}|${TAG_NAME}|g" -e "s|{REPO}|${GITHUB_REPOSITORY}|g" .github/release_template.md > RELEASE_BODY.md
+          VERSION_NAME="${TAG_NAME#v}"
+          sed -e "s|{TAG}|${TAG_NAME}|g" -e "s|{VERSION}|${VERSION_NAME}|g" -e "s|{REPO}|${GITHUB_REPOSITORY}|g" .github/release_template.md > RELEASE_BODY.md
 
       - name: Create GitHub Release
         if: ${{ env.ACT != 'true' }}

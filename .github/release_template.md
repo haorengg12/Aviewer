@@ -21,7 +21,6 @@
                 <a href="https://github.com/haorengg12/Aviewer/releases/download/v{VERSION}/Aviewer-{VERSION}-android-arm64-v8a.apk"><img src="https://img.shields.io/badge/APK-ARMv8-168039.svg?logo=android"></a><br>
                 <a href="https://github.com/haorengg12/Aviewer/releases/download/v{VERSION}/Aviewer-{VERSION}-android-armeabi-v7a.apk"><img src="https://img.shields.io/badge/APK-ARMv7-45bf55.svg?logo=android"></a><br>
                 <a href="https://github.com/haorengg12/Aviewer/releases/download/v{VERSION}/Aviewer-{VERSION}-android-x86_64.apk"><img src="https://img.shields.io/badge/APK-x64-96ed89.svg?logo=android"></a><br>
-                <a href="https://github.com/haorengg12/Aviewer/releases/download/v{VERSION}/Aviewer-{VERSION}-android-universal.aab"><img src="https://img.shields.io/badge/AAB-Universal-3f51b5.svg?logo=android"></a>
             </td>
         </tr>
         <tr>
@@ -33,7 +32,8 @@
         <tr>
             <td>Windows</td>
             <td>
-                <a href="https://github.com/haorengg12/Aviewer/releases/download/v{VERSION}/Aviewer-windows-v{VERSION}.zip"><img src="https://img.shields.io/badge/Portable-ZIP-67b7d1.svg?logo=windows"></a>
+                <a href="https://github.com/haorengg12/Aviewer/releases/download/v{VERSION}/Aviewer-{VERSION}-windows-amd64-setup.exe"><img src="https://img.shields.io/badge/Setup-EXE-0078D6.svg?logo=windows"></a><br>
+                <a href="https://github.com/haorengg12/Aviewer/releases/download/v{VERSION}/Aviewer-{VERSION}-windows-amd64.zip"><img src="https://img.shields.io/badge/Portable-ZIP-67b7d1.svg?logo=windows"></a>
             </td>
         </tr>
     </tbody>
