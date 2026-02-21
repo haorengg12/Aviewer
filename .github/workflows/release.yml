@@ -1,5 +1,4 @@
 name: Build Releases
-
 on:
   push:
     tags:
@@ -17,6 +16,32 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Prepare Android signing (optional via secrets)
+        shell: bash
+        run: |
+          set -e
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ] && \
+             [ -n "${ANDROID_KEYSTORE_PASSWORD:-}" ] && \
+             [ -n "${ANDROID_KEY_ALIAS:-}" ] && \
+             [ -n "${ANDROID_KEY_PASSWORD:-}" ]; then
+            mkdir -p android
+            base64 -d <<<"$ANDROID_KEYSTORE_BASE64" > android/my-release-key.jks
+            cat > android/key.properties << EOF
+storePassword=${ANDROID_KEYSTORE_PASSWORD}
+keyPassword=${ANDROID_KEY_PASSWORD}
+keyAlias=${ANDROID_KEY_ALIAS}
+storeFile=my-release-key.jks
+EOF
+            chmod 600 android/my-release-key.jks android/key.properties
+          else
+            echo "Android signing secrets not fully provided; skipping keystore injection."
+          fi
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -199,11 +224,61 @@ jobs:
           if (-not $archivePath) { throw "Windows build output not found under build/windows" }
           $zipName = "Aviewer-$version-windows-amd64.zip"
           Compress-Archive -Path "$archivePath/*" -DestinationPath $zipName
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          choco install innosetup -y
+
+      - name: Build Windows installer (includes DLLs)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart("v")
+          $archivePath = $null
+          $candidates = @(
+            "build/windows/runner/Release",
+            "build/windows/x64/runner/Release",
+            "build/windows/runner",
+            "build/windows/x64/runner"
+          )
+          foreach ($p in $candidates) {
+            if (Test-Path $p) { $archivePath = $p; break }
+          }
+          if (-not $archivePath) {
+            $exe = Get-ChildItem -Path "build/windows" -Recurse -Filter "*.exe" | Select-Object -First 1
+            if ($exe) { $archivePath = $exe.DirectoryName }
+          }
+          if (-not $archivePath) { throw "Windows build output not found under build/windows" }
           $exeFile = Get-ChildItem -Path $archivePath -Filter "*.exe" | Select-Object -First 1
-          if ($exeFile) {
-            Copy-Item -Path $exeFile.FullName -Destination ("Aviewer-{0}-windows-amd64-setup.exe" -f $version)
+          if (-not $exeFile) { throw "No .exe found under $archivePath" }
+          $exeName = $exeFile.Name
+          $iss = @"
+[Setup]
+AppName=Aviewer
+AppVersion=$version
+DefaultDirName={pf}\Aviewer
+DefaultGroupName=Aviewer
+OutputDir=.
+OutputBaseFilename=Aviewer-$version-windows-amd64-setup
+Compression=lzma2
+SolidCompression=yes
+ArchitecturesInstallIn64BitMode=x64
+
+[Files]
+Source: "$archivePath\*"; DestDir: "{app}"; Flags: recursesubdirs
+
+[Icons]
+Name: "{group}\Aviewer"; Filename: "{app}\$exeName"
+Name: "{group}\Uninstall Aviewer"; Filename: "{uninstallexe}"
+"@
+          Set-Content -Path installer.iss -Value $iss -Encoding ASCII
+          if (Get-Command iscc -ErrorAction SilentlyContinue) {
+            iscc installer.iss
           } else {
-            Write-Warning "No .exe found under $archivePath to copy as setup exe"
+            & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
           }
 
       - name: Upload Windows artifacts
