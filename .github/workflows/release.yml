@@ -58,10 +58,16 @@ jobs:
         shell: bash
         run: |
           set -e
-          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ] && \
-             [ -n "${ANDROID_KEYSTORE_PASSWORD:-}" ] && \
-             [ -n "${ANDROID_KEY_ALIAS:-}" ] && \
-             [ -n "${ANDROID_KEY_PASSWORD:-}" ]; then
+          missing=0
+          for var in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!var:-}" ]; then
+              echo "Secret missing or empty: $var"
+              missing=1
+            else
+              echo "Secret present: $var"
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
             mkdir -p android/app
             printf "%s" "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
             STORE_PATH="$(pwd)/android/app/release.keystore"
@@ -71,23 +77,8 @@ jobs:
             sed -i "s|storeFile=release.keystore|storeFile=${STORE_PATH}|" android/key.properties
             chmod 600 android/app/release.keystore android/key.properties
           else
-            echo "Android signing secrets not fully provided; falling back to debug keystore for release signing."
-            DEBUG_KS="$HOME/.android/debug.keystore"
-            mkdir -p "$(dirname "$DEBUG_KS")"
-            if [ ! -f "$DEBUG_KS" ]; then
-              keytool -genkeypair -v \
-                -keystore "$DEBUG_KS" \
-                -storepass android \
-                -keypass android \
-                -alias androiddebugkey \
-                -keyalg RSA \
-                -keysize 2048 \
-                -validity 10000 \
-                -dname "CN=Android Debug,O=Android,C=US"
-            fi
-            printf "storePassword=android\nkeyPassword=android\nkeyAlias=androiddebugkey\nstoreFile=%s\n" \
-              "$DEBUG_KS" > android/key.properties
-            chmod 600 "$DEBUG_KS" android/key.properties
+            echo "Android signing secrets not fully provided; aborting to show missing variables."
+            exit 1
           fi
       - name: Verify signing config (no secrets exposure)
         shell: bash
