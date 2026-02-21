@@ -246,7 +246,7 @@ jobs:
       - name: Prepare release notes
         run: |
           TAG_NAME="${GITHUB_REF_NAME}"
-          sed -e "s/{TAG}/${TAG_NAME}/g" -e "s/{VERSION}/${TAG_NAME}/g" -e "s/{REPO}/${GITHUB_REPOSITORY}/g" .github/release_template.md > RELEASE_BODY.md
+          sed -e "s|{TAG}|${TAG_NAME}|g" -e "s|{VERSION}|${TAG_NAME}|g" -e "s|{REPO}|${GITHUB_REPOSITORY}|g" .github/release_template.md > RELEASE_BODY.md
 
       - name: Create GitHub Release
         if: ${{ env.ACT != 'true' }}
