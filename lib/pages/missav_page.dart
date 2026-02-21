@@ -4,8 +4,8 @@ import 'package:html/parser.dart' as parser;
 import 'package:html/dom.dart' as dom;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'missav_detail_page.dart';
 
 class MissAVPage extends StatefulWidget {
   const MissAVPage({super.key});
@@ -543,8 +543,11 @@ class _MissAVPageState extends State<MissAVPage> {
       child: InkWell(
         onTap: () {
           if (item.videoUrl.isNotEmpty) {
-            launchUrl(Uri.parse(item.videoUrl),
-                mode: LaunchMode.externalApplication);
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => MissAVDetailPage(url: item.videoUrl),
+              ),
+            );
           }
         },
         onHover: (isHovering) {
