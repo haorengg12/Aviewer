@@ -103,9 +103,18 @@ jobs:
             sed -i 's/java.util.Properties()/Properties()/g' "$GRADLE_FILE"
             sed -i 's/keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))/keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }/g' "$GRADLE_FILE"
           fi
+      
+      - name: Disable Gradle VFS watching (CI workaround)
+        shell: bash
+        run: |
+          set -e
+          echo "org.gradle.vfs.watch=false" >> android/gradle.properties
+          echo "org.gradle.daemon=false" >> android/gradle.properties
 
       - name: Build Android APK
         run: flutter build apk --release --split-per-abi
+        env:
+          GRADLE_OPTS: -Dorg.gradle.vfs.watch=false -Dorg.gradle.daemon=false
 
       - name: Rename Android artifacts
         run: |
