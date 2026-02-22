@@ -32,6 +32,9 @@ class _MissAVDetailPageState extends State<MissAVDetailPage> {
   bool _incrementalActive = false;
   int _idleRounds = 0;
   final Set<String> _parsedSectionTitles = {};
+  final Map<String, VideoPlayerController> _previewControllers = {};
+  int? _previewActiveSectionIndex;
+  int? _previewActiveItemIndex;
 
   @override
   void initState() {
@@ -47,6 +50,9 @@ class _MissAVDetailPageState extends State<MissAVDetailPage> {
   @override
   void dispose() {
     _flickManager?.dispose();
+    for (final c in _previewControllers.values) {
+      c.dispose();
+    }
     _headlessWebView?.dispose();
     super.dispose();
   }
@@ -166,7 +172,11 @@ class _MissAVDetailPageState extends State<MissAVDetailPage> {
         } catch (e) {}
       })();
     ''';
-    await controller.evaluateJavascript(source: js);
+    try {
+      await controller.evaluateJavascript(source: js);
+    } catch (e) {
+      debugPrint('Inject capture script failed: $e');
+    }
   }
 
   Future<void> _startIncrementalParse(InAppWebViewController controller) async {
@@ -616,62 +626,200 @@ class _MissAVDetailPageState extends State<MissAVDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  CachedNetworkImage(
-                    imageUrl: item.imageUrl,
-                    httpHeaders: _headersForUrl(item.imageUrl),
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
-                      color: Colors.grey[200],
-                      child: const Center(child: CircularProgressIndicator()),
+            GestureDetector(
+              onTap: () {
+                final url = item.previewUrl;
+                final isVideo = url != null && (url.toLowerCase().endsWith('.mp4') || url.toLowerCase().endsWith('.webm'));
+                VideoPlayerController? ctrl;
+                if (isVideo) {
+                  ctrl = _previewControllers[url];
+                }
+                final playing = ctrl?.value.isPlaying == true;
+                final isImageActive = !isVideo &&
+                    _previewActiveSectionIndex == sectionIndex &&
+                    _previewActiveItemIndex == index;
+                if (playing || isImageActive) {
+                  if (item.videoUrl.isNotEmpty) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => MissAVDetailPage(url: item.videoUrl),
+                      ),
+                    );
+                  }
+                } else {
+                  if (isVideo) {
+                    _startPreview(url);
+                  } else if (item.previewUrl != null) {
+                    setState(() {
+                      _previewActiveSectionIndex = sectionIndex;
+                      _previewActiveItemIndex = index;
+                    });
+                  }
+                }
+              },
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CachedNetworkImage(
+                      imageUrl: item.imageUrl,
+                      httpHeaders: _headersForUrl(item.imageUrl),
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(
+                        color: Colors.grey[200],
+                        child: const Center(child: CircularProgressIndicator()),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        color: Colors.grey[300],
+                        child: const Icon(Icons.error),
+                      ),
                     ),
-                    errorWidget: (context, url, error) => Container(
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.error),
-                    ),
-                  ),
-                  if (item.duration != null && item.duration!.isNotEmpty)
-                    Positioned(
-                      right: 4,
-                      bottom: 4,
-                      child: Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.7),
-                          borderRadius: BorderRadius.circular(4),
+                    if (item.previewUrl != null) ...[
+                      if ((item.previewUrl!.toLowerCase().endsWith('.mp4') ||
+                              item.previewUrl!.toLowerCase().endsWith('.webm')) &&
+                          _previewControllers[item.previewUrl!] != null)
+                        Positioned.fill(
+                          child: _buildPreviewWidget(item.previewUrl!),
+                        )
+                      else if (_previewActiveSectionIndex == sectionIndex &&
+                          _previewActiveItemIndex == index)
+                        Positioned.fill(
+                          child: CachedNetworkImage(
+                            imageUrl: item.previewUrl!,
+                            httpHeaders: _headersForUrl(item.previewUrl!),
+                            fit: BoxFit.cover,
+                            placeholder: (context, u) => Container(
+                              color: Colors.black12,
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              ),
+                            ),
+                            errorWidget: (context, u, e) => const SizedBox(),
+                          ),
                         ),
-                        child: Text(
-                          item.duration!,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
+                    ],
+                    if (item.duration != null && item.duration!.isNotEmpty)
+                      Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: Container(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            item.duration!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
             Padding(
               padding: const EdgeInsets.all(8.0),
-              child: Text(
-                item.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
+              child: InkWell(
+                onTap: () {
+                  if (item.videoUrl.isNotEmpty) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => MissAVDetailPage(url: item.videoUrl),
+                      ),
+                    );
+                  }
+                },
+                child: SizedBox(
+                  width: double.infinity,
+                  child: _buildTwoLineTitle(item.title),
                 ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+  Widget _buildTwoLineTitle(String title) {
+    final parts = title.trim().split(RegExp(r'\s+'));
+    final line1 = parts.isNotEmpty ? parts.first : '';
+    final line2 = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          line1,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          line2,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+  Future<void> _startPreview(String url) async {
+    var c = _previewControllers[url];
+    if (c == null) {
+      try {
+        c = VideoPlayerController.networkUrl(Uri.parse(url));
+        _previewControllers[url] = c;
+        if (mounted) {
+          setState(() {});
+        }
+        await c.initialize();
+        await c.setLooping(true);
+        await c.setVolume(0);
+        await c.play();
+        if (mounted) {
+          setState(() {});
+        }
+      } catch (_) {}
+    } else {
+      try {
+        await c.play();
+      } catch (_) {}
+    }
+  }
+  Widget _buildPreviewWidget(String url) {
+    final c = _previewControllers[url];
+    if (c != null && c.value.isInitialized) {
+      return FittedBox(
+        fit: BoxFit.cover,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: c.value.size.width,
+          height: c.value.size.height,
+          child: VideoPlayer(c),
+        ),
+      );
+    }
+    return const Center(
+      child: SizedBox(
+        width: 24,
+        height: 24,
+        child: CircularProgressIndicator(strokeWidth: 2),
       ),
     );
   }

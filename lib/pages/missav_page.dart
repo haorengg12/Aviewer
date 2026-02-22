@@ -5,6 +5,7 @@ import 'package:html/dom.dart' as dom;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:video_player/video_player.dart';
 import 'missav_detail_page.dart';
 
 class MissAVPage extends StatefulWidget {
@@ -25,6 +26,7 @@ class _MissAVPageState extends State<MissAVPage> {
     bool _incrementalActive = false;
     int _idleRounds = 0;
     final Set<String> _parsedSectionTitles = {};
+  final Map<String, VideoPlayerController> _previewControllers = {};
 
   @override
   void initState() {
@@ -40,6 +42,9 @@ class _MissAVPageState extends State<MissAVPage> {
 
   @override
   void dispose() {
+    for (final c in _previewControllers.values) {
+      c.dispose();
+    }
     _headlessWebView?.dispose();
     super.dispose();
   }
@@ -288,6 +293,9 @@ class _MissAVPageState extends State<MissAVPage> {
       final img = thumb.querySelector('img');
       if (img == null) continue;
 
+      final video = thumb.querySelector('video');
+      if (video == null) continue;
+
       if (titleText.isEmpty) {
         titleText =
             img.attributes['alt'] ?? firstLink.attributes['title'] ?? '';
@@ -298,7 +306,7 @@ class _MissAVPageState extends State<MissAVPage> {
 
       var imgUrl = img.attributes['data-src'] ?? img.attributes['src'];
       var videoUrl = firstLink.attributes['href'];
-      var previewUrl = img.attributes['data-preview'];
+      var previewUrl = video.attributes['data-src'] ?? img.attributes['src'];
       var duration = '';
 
       final durationSpans = thumb.querySelectorAll('span');
@@ -382,6 +390,9 @@ class _MissAVPageState extends State<MissAVPage> {
       final img = firstLink.querySelector('img') ?? div.querySelector('img');
       if (img == null) continue;
 
+      final video = div.querySelector('video');
+      if (video == null) continue;
+
       var titleText = '';
       if (div.children.length >= 2) {
         final titleDiv = div.children[1];
@@ -402,7 +413,7 @@ class _MissAVPageState extends State<MissAVPage> {
       // 视频详情页链接：点击卡片跳转的 href
       var videoUrl = firstLink.attributes['href'];
       // 预览图（序列帧 gif / jpg），有些卡片上会有 data-preview
-      var previewUrl = img.attributes['data-preview'];
+      var previewUrl = video.attributes['data-src'] ?? img.attributes['src'];
       var duration = '';
 
       // 时长：卡片右下角的小标签，一般是 00:10:23 这样的格式
@@ -541,15 +552,6 @@ class _MissAVPageState extends State<MissAVPage> {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () {
-          if (item.videoUrl.isNotEmpty) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => MissAVDetailPage(url: item.videoUrl),
-              ),
-            );
-          }
-        },
         onHover: (isHovering) {
           if (item.previewUrl != null) {
             setState(() {
@@ -561,107 +563,230 @@ class _MissAVPageState extends State<MissAVPage> {
                 _hoverIndexItem = null;
               }
             });
+            if (isHovering) {
+              _startPreview(item.previewUrl);
+            } else {
+              _stopPreview(item.previewUrl);
+            }
           }
         },
-        onLongPress: () {
-          if (item.previewUrl != null) {
-            setState(() {
-              _hoverIndexSection = sectionIndex;
-              _hoverIndexItem = index;
-            });
-          }
-        },
+        // 禁用长按触发预览，避免与点击播放逻辑冲突
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // 静态封面：列表页中看到的主缩略图
-                  CachedNetworkImage(
-                    imageUrl: item.imageUrl,
-                    httpHeaders: _headersForUrl(item.imageUrl),
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
-                      color: Colors.grey[200],
-                      child: const Center(child: CircularProgressIndicator()),
+            GestureDetector(
+              onTap: () {
+                final url = item.previewUrl;
+                final isVideo = _isVideoPreview(url);
+                final playing = isVideo && url != null && _previewControllers[url]?.value.isPlaying == true;
+                final isImageActive = !isVideo &&
+                    _hoverIndexSection == sectionIndex &&
+                    _hoverIndexItem == index;
+                if (playing || isImageActive) {
+                  if (item.videoUrl.isNotEmpty) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => MissAVDetailPage(url: item.videoUrl),
+                      ),
+                    );
+                  }
+                } else {
+                  if (isVideo) {
+                    _startPreview(url);
+                  } else if (item.previewUrl != null) {
+                    setState(() {
+                      _hoverIndexSection = sectionIndex;
+                      _hoverIndexItem = index;
+                    });
+                  }
+                }
+              },
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CachedNetworkImage(
+                      imageUrl: item.imageUrl,
+                      httpHeaders: _headersForUrl(item.imageUrl),
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(
+                        color: Colors.grey[200],
+                        child: const Center(child: CircularProgressIndicator()),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        color: Colors.grey[300],
+                        child: const Icon(Icons.error),
+                      ),
                     ),
-                    errorWidget: (context, url, error) => Container(
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.error),
-                    ),
-                  ),
-                  // 动态预览（如果有）：鼠标悬停/长按时切换到 data-preview 对应的预览序列帧
-                  if (showPreview)
-                    Positioned.fill(
-                      child: CachedNetworkImage(
-                        imageUrl: item.previewUrl!,
-                        httpHeaders: _headersForUrl(item.previewUrl!),
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(
-                          color: Colors.black12,
-                          child: const Center(
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                    if (item.previewUrl != null) ...[
+                      if (_isVideoPreview(item.previewUrl) &&
+                          _previewControllers[item.previewUrl!] != null)
+                        Positioned.fill(
+                          child: _buildPreviewWidget(item.previewUrl!),
+                        )
+                      else if (showPreview)
+                        Positioned.fill(
+                          child: _buildPreviewWidget(item.previewUrl!),
+                        ),
+                    ],
+                    if (item.duration != null && item.duration!.isNotEmpty)
+                      Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            item.duration!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
-                        errorWidget: (context, url, error) =>
-                            const SizedBox(), // 加载失败时不显示错误图标，直接透出底图
                       ),
-                    ),
-                  // 视频时长：卡片右下角的小黑底时间条
-                  if (item.duration != null && item.duration!.isNotEmpty)
-                    Positioned(
-                      right: 4,
-                      bottom: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.7),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          item.duration!,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                    if (item.previewUrl != null)
+                      const Positioned(
+                        right: 4,
+                        top: 4,
+                        child: Icon(Icons.play_circle_outline,
+                            color: Colors.white70, size: 20),
                       ),
-                    ),
-                  // 预览图标：右上角的小播放图标，提示该卡片支持预览
-                  if (item.previewUrl != null)
-                    const Positioned(
-                      right: 4,
-                      top: 4,
-                      child: Icon(Icons.play_circle_outline,
-                          color: Colors.white70, size: 20),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
             Padding(
               padding: const EdgeInsets.all(8.0),
-              child: Text(
-                item.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
+              child: InkWell(
+                onTap: () {
+                  if (item.videoUrl.isNotEmpty) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => MissAVDetailPage(url: item.videoUrl),
+                      ),
+                    );
+                  }
+                },
+                child: SizedBox(
+                  width: double.infinity,
+                  child: _buildTwoLineTitle(item.title),
                 ),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+  Widget _buildTwoLineTitle(String title) {
+    final parts = title.trim().split(RegExp(r'\s+'));
+    final line1 = parts.isNotEmpty ? parts.first : '';
+    final line2 = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          line1,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          line2,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+  bool _isVideoPreview(String? url) {
+    if (url == null) return false;
+    final u = url.toLowerCase();
+    return u.endsWith('.mp4') || u.endsWith('.webm');
+  }
+  Future<void> _startPreview(String? url) async {
+    if (!_isVideoPreview(url)) return;
+    final key = url!;
+    var c = _previewControllers[key];
+    if (c == null) {
+      try {
+        c = VideoPlayerController.networkUrl(Uri.parse(url));
+        _previewControllers[key] = c;
+        if (mounted) {
+          setState(() {});
+        }
+        await c.initialize();
+        await c.setLooping(true);
+        await c.setVolume(0);
+        await c.play();
+        if (mounted) {
+          setState(() {});
+        }
+      } catch (_) {}
+    } else {
+      try {
+        await c.play();
+      } catch (_) {}
+    }
+  }
+  void _stopPreview(String? url) {
+    if (!_isVideoPreview(url)) return;
+    final c = _previewControllers[url!];
+    try {
+      c?.pause();
+    } catch (_) {}
+  }
+  Widget _buildPreviewWidget(String url) {
+    if (_isVideoPreview(url)) {
+      final c = _previewControllers[url];
+      if (c != null && c.value.isInitialized) {
+        return FittedBox(
+          fit: BoxFit.cover,
+          clipBehavior: Clip.hardEdge,
+          child: SizedBox(
+            width: c.value.size.width,
+            height: c.value.size.height,
+            child: VideoPlayer(c),
+          ),
+        );
+      }
+      return const Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: url,
+      httpHeaders: _headersForUrl(url),
+      fit: BoxFit.cover,
+      placeholder: (context, u) => Container(
+        color: Colors.black12,
+        child: const Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      ),
+      errorWidget: (context, u, e) => const SizedBox(),
     );
   }
   Map<String, String> _headersForUrl(String url) {
